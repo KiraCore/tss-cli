@@ -12,7 +12,7 @@ func Privgen() *cobra.Command {
 		Args:  cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 
-			id, err := cmd.Flags().GetString(IdKey)
+			id, err := cmd.Flags().GetInt(IdKey)
 			if err != nil {
 				return fmt.Errorf("invalid id: %w", err)
 			}
@@ -46,7 +46,7 @@ func Privgen() *cobra.Command {
 		},
 	}
 
-	cmd.Flags().String("id", "", "id")
+	cmd.Flags().Int(IdKey, 0, "id")
 	cmd.MarkFlagRequired(IdKey)
 
 	cmd.Flags().Int(ThresholdKey, 0, "threshold")
@@ -61,7 +61,7 @@ func Privgen() *cobra.Command {
 	cmd.Flags().String(MnemonicKey, "", "mnemonic")
 	cmd.MarkFlagRequired(MnemonicKey)
 
-	cmd.Flags().String(OutputKey, "./", "output")
+	cmd.Flags().String(OutputKey, "message_data", "output")
 
 	return cmd
 }
@@ -155,8 +155,8 @@ func Sign() *cobra.Command {
 
 func Verify() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "sign",
-		Short: "Sign message",
+		Use:   "verify",
+		Short: "Verify message",
 		Args:  cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			message, err := cmd.Flags().GetString(MessageKey)
