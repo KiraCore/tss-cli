@@ -14,7 +14,8 @@ import (
 	"github.com/agl/ed25519/edwards25519"
 	"github.com/decred/dcrd/dcrec/edwards/v2"
 
-	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/binance-chain/tss-lib/common"
+	"github.com/binance-chain/tss-lib/tss"
 )
 
 func (round *finalization) Start() *tss.Error {
@@ -40,13 +41,15 @@ func (round *finalization) Start() *tss.Error {
 	s := encodedBytesToBigInt(sumS)
 
 	// save the signature for final output
-	round.data.Signature = append(bigIntToEncodedBytes(round.temp.r)[:], sumS[:]...)
-	round.data.R = round.temp.r.Bytes()
-	round.data.S = s.Bytes()
-	round.data.M = round.temp.m.Bytes()
+	signature := new(common.ECSignature)
+	signature.Signature = append(bigIntToEncodedBytes(round.temp.r)[:], sumS[:]...)
+	signature.R = round.temp.r.Bytes()
+	signature.S = s.Bytes()
+	signature.M = round.temp.m.Bytes()
+	round.data.Signature = signature
 
 	pk := edwards.PublicKey{
-		Curve: round.Params().EC(),
+		Curve: tss.EC(),
 		X:     round.key.EDDSAPub.X(),
 		Y:     round.key.EDDSAPub.Y(),
 	}
@@ -55,7 +58,7 @@ func (round *finalization) Start() *tss.Error {
 	if !ok {
 		return round.WrapError(fmt.Errorf("signature verification failed"))
 	}
-	round.end <- *round.data
+	round.end <- round.data
 
 	return nil
 }

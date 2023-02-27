@@ -10,15 +10,15 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/bnb-chain/tss-lib/common"
-	"github.com/bnb-chain/tss-lib/crypto"
-	"github.com/bnb-chain/tss-lib/crypto/commitments"
-	"github.com/bnb-chain/tss-lib/eddsa/keygen"
-	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/binance-chain/tss-lib/common"
+	"github.com/binance-chain/tss-lib/crypto"
+	"github.com/binance-chain/tss-lib/crypto/commitments"
+	"github.com/binance-chain/tss-lib/eddsa/keygen"
+	"github.com/binance-chain/tss-lib/tss"
 )
 
 // round 1 represents round 1 of the signing part of the EDDSA TSS spec
-func newRound1(params *tss.Parameters, key *keygen.LocalPartySaveData, data *common.SignatureData, temp *localTempData, out chan<- tss.Message, end chan<- common.SignatureData) tss.Round {
+func newRound1(params *tss.Parameters, key *keygen.LocalPartySaveData, data *SignatureData, temp *localTempData, out chan<- tss.Message, end chan<- *SignatureData) tss.Round {
 	return &round1{
 		&base{params, key, data, temp, out, end, make([]bool, len(params.Parties().IDs())), false, 1}}
 }
@@ -32,20 +32,19 @@ func (round *round1) Start() *tss.Error {
 	round.started = true
 	round.resetOK()
 
+	i := round.PartyID().Index
+
 	// 1. select ri
-	ri := common.GetRandomPositiveInt(round.Params().EC().Params().N)
+	ri := common.GetRandomPositiveInt(tss.EC().Params().N)
 
 	// 2. make commitment
-	pointRi := crypto.ScalarBaseMult(round.Params().EC(), ri)
+	pointRi := crypto.ScalarBaseMult(tss.EC(), ri)
 	cmt := commitments.NewHashCommitment(pointRi.X(), pointRi.Y())
 
 	// 3. store r1 message pieces
 	round.temp.ri = ri
 	round.temp.pointRi = pointRi
 	round.temp.deCommit = cmt.D
-
-	i := round.PartyID().Index
-	round.ok[i] = true
 
 	// 4. broadcast commitment
 	r1msg2 := NewSignRound1Message(round.PartyID(), cmt.C)
@@ -92,7 +91,7 @@ func (round *round1) prepare() error {
 	if round.Threshold()+1 > len(ks) {
 		return fmt.Errorf("t+1=%d is not satisfied by the key count of %d", round.Threshold()+1, len(ks))
 	}
-	wi := PrepareForSigning(round.Params().EC(), i, len(ks), xi, ks)
+	wi := PrepareForSigning(i, len(ks), xi, ks)
 
 	round.temp.wi = wi
 	return nil

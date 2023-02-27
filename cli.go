@@ -5,10 +5,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-func Privgen() *cobra.Command {
+func Keygen() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:   "privgen",
-		Short: "Generate private keys",
+		Use:   "keygen",
+		Short: "Generate keys",
 		Args:  cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
 
@@ -27,12 +27,7 @@ func Privgen() *cobra.Command {
 				return fmt.Errorf("invalid partiesy: %w", err)
 			}
 
-			round, err := cmd.Flags().GetInt(RoundKey)
-			if err != nil {
-				return fmt.Errorf("invalid partiesy: %w", err)
-			}
-
-			mnemonic, err := cmd.Flags().GetString(MnemonicKey)
+			input, err := cmd.Flags().GetString(InputKey)
 			if err != nil {
 				return fmt.Errorf("invalid id: %w", err)
 			}
@@ -42,7 +37,7 @@ func Privgen() *cobra.Command {
 				return fmt.Errorf("invalid id: %w", err)
 			}
 
-			return GeneratePrivateKey(id, threshold, parties, round, mnemonic, output)
+			return GenerateKey(id, threshold, parties, input, output)
 		},
 	}
 
@@ -55,48 +50,8 @@ func Privgen() *cobra.Command {
 	cmd.Flags().Int(PartiesKey, 0, "parties")
 	cmd.MarkFlagRequired(PartiesKey)
 
-	cmd.Flags().Int(RoundKey, 0, "round")
-	cmd.MarkFlagRequired(RoundKey)
-
-	cmd.Flags().String(MnemonicKey, "", "mnemonic")
-	cmd.MarkFlagRequired(MnemonicKey)
-
-	cmd.Flags().String(OutputKey, "message_data", "output")
-
-	return cmd
-}
-
-func Pubgen() *cobra.Command {
-	cmd := &cobra.Command{
-		Use:   "pubgen",
-		Short: "Generate public keys",
-		Args:  cobra.ExactArgs(0),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			input, err := cmd.Flags().GetString(InputKey)
-			if err != nil {
-				return fmt.Errorf("invalid id: %w", err)
-			}
-
-			output, err := cmd.Flags().GetString(OutputKey)
-			if err != nil {
-				return fmt.Errorf("invalid id: %w", err)
-			}
-
-			format, err := cmd.Flags().GetString(FormatKey)
-			if err != nil {
-				return fmt.Errorf("invalid id: %w", err)
-			}
-
-			return GeneratePublicKey(input, output, format)
-		},
-	}
-
-	cmd.Flags().String(InputKey, "", "mnemonic")
-	cmd.MarkFlagRequired(InputKey)
-
-	cmd.Flags().String(OutputKey, "./", "output")
-
-	cmd.Flags().String(FormatKey, "string", "output")
+	cmd.Flags().String(InputKey, "./input", "input")
+	cmd.Flags().String(OutputKey, "./output", "output")
 
 	return cmd
 }
@@ -107,17 +62,27 @@ func Sign() *cobra.Command {
 		Short: "Sign message",
 		Args:  cobra.ExactArgs(0),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			id, err := cmd.Flags().GetInt(IdKey)
+			if err != nil {
+				return fmt.Errorf("invalid id: %w", err)
+			}
+
 			input, err := cmd.Flags().GetString(InputKey)
 			if err != nil {
 				return fmt.Errorf("invalid id: %w", err)
 			}
 
-			output, err := cmd.Flags().GetString(OutputKey)
+			parties, err := cmd.Flags().GetInt(PartiesKey)
 			if err != nil {
-				return fmt.Errorf("invalid id: %w", err)
+				return fmt.Errorf("invalid partiesy: %w", err)
 			}
 
-			round, err := cmd.Flags().GetInt(RoundKey)
+			quorum, err := cmd.Flags().GetInt(QuorumKey)
+			if err != nil {
+				return fmt.Errorf("invalid quorum: %w", err)
+			}
+
+			output, err := cmd.Flags().GetString(OutputKey)
 			if err != nil {
 				return fmt.Errorf("invalid id: %w", err)
 			}
@@ -132,23 +97,27 @@ func Sign() *cobra.Command {
 				return fmt.Errorf("invalid id: %w", err)
 			}
 
-			return SignMessage(input, output, message, key, round)
+			return SignMessage(input, output, message, key, id, parties, quorum)
 		},
 	}
 
-	cmd.Flags().String(InputKey, "", "mnemonic")
-	cmd.MarkFlagRequired(InputKey)
+	cmd.Flags().Int(IdKey, 0, "id")
+	cmd.MarkFlagRequired(IdKey)
 
-	cmd.Flags().String(OutputKey, "./", "output")
+	cmd.Flags().Int(PartiesKey, 0, "parties")
+	cmd.MarkFlagRequired(PartiesKey)
 
-	cmd.Flags().Int(RoundKey, 0, "round")
-	cmd.MarkFlagRequired(RoundKey)
+	cmd.Flags().Int(QuorumKey, 0, "quorum")
+	cmd.MarkFlagRequired(QuorumKey)
 
-	cmd.Flags().String(MessageKey, "", "message string/file")
-	cmd.MarkFlagRequired(MessageKey)
+	cmd.Flags().String(InputKey, "./input", "input")
+	cmd.Flags().String(OutputKey, "./output", "output")
 
-	cmd.Flags().String(KeyKey, "", "key file")
-	cmd.MarkFlagRequired(KeyKey)
+	cmd.Flags().String(MessageKey, "", "message")
+	cmd.Flags().String(MessageFileKey, "./message/message", "message-file")
+	cmd.MarkFlagsMutuallyExclusive(MessageKey, MessageFileKey)
+
+	cmd.Flags().String(KeyKey, "./key/key", "key file")
 
 	return cmd
 }

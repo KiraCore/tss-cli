@@ -12,7 +12,7 @@ package commitments
 import (
 	"math/big"
 
-	"github.com/bnb-chain/tss-lib/common"
+	"github.com/binance-chain/tss-lib/common"
 )
 
 const (
@@ -49,7 +49,7 @@ func NewHashCommitment(secrets ...*big.Int) *HashCommitDecommit {
 }
 
 func NewHashDeCommitmentFromBytes(marshalled [][]byte) HashDeCommitment {
-	return common.MultiBytesToBigInts(marshalled)
+	return common.ByteSlicesToBigInts(marshalled)
 }
 
 func (cmt *HashCommitDecommit) Verify() bool {

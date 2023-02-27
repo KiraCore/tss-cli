@@ -10,27 +10,30 @@ import (
 	"os"
 	"time"
 
-	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
-	"github.com/bnb-chain/tss-lib/test"
-	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/binance-chain/tss-lib/ecdsa/keygen"
+	"github.com/binance-chain/tss-lib/ecdsa/signing"
+	"github.com/binance-chain/tss-lib/test"
+	"github.com/binance-chain/tss-lib/tss"
 	"github.com/cosmos/cosmos-sdk/client"
 	"github.com/spf13/cobra"
 	"github.com/tendermint/tendermint/libs/json"
 )
 
 const (
-	IdKey        = "id"
-	PartiesKey   = "parties"
-	ThresholdKey = "threshold"
-	RoundKey     = "round"
-	MnemonicKey  = "mnemonic"
-	InputKey     = "input"
-	OutputKey    = "output"
-	FormatKey    = "format"
-	MessageKey   = "message"
-	KeyKey       = "key"
-	SignatureKey = "signature"
-	PublicKey    = "pub-key"
+	IdKey          = "id"
+	PartiesKey     = "parties"
+	QuorumKey      = "quorum"
+	ThresholdKey   = "threshold"
+	RoundKey       = "round"
+	MnemonicKey    = "mnemonic"
+	InputKey       = "input"
+	OutputKey      = "output"
+	FormatKey      = "format"
+	MessageKey     = "message"
+	MessageFileKey = "message-file"
+	KeyKey         = "key"
+	SignatureKey   = "signature"
+	PublicKey      = "pub-key"
 )
 
 type Message struct {
@@ -43,10 +46,13 @@ type Message struct {
 
 var errCh = make(chan *tss.Error, 1)
 var outCh = make(chan tss.Message, 1)
-var endCh = make(chan keygen.LocalPartySaveData, 1)
+var endChG = make(chan keygen.LocalPartySaveData, 1)
+var endChS = make(chan *signing.SignatureData, 1)
 
+var Input string
 var Output string
-var P *keygen.LocalParty
+var PG *keygen.LocalParty
+var PS *signing.LocalParty
 var Id int
 
 func main() {
@@ -57,14 +63,13 @@ func main() {
 		RunE:                       client.ValidateCmd,
 	}
 
-	rootCmd.AddCommand(Privgen())
-	rootCmd.AddCommand(Pubgen())
+	rootCmd.AddCommand(Keygen())
 	rootCmd.AddCommand(Sign())
 	rootCmd.AddCommand(Verify())
 
 	rootCmd.Execute()
 
-	go MonitorEnd()
+	go checkChannels()
 
 	for {
 		buf := bufio.NewReader(os.Stdin)
@@ -74,13 +79,13 @@ func main() {
 		if err != nil {
 			fmt.Println(err)
 		} else {
-			err = GeneratePrivateKeyUpdate()
+			err = Update()
 			fmt.Println(err)
 		}
 	}
 }
 
-func MonitorEnd() {
+func checkChannels() {
 outer:
 	for {
 		select {
@@ -133,20 +138,24 @@ outer:
 					fmt.Println("Create file error:", err)
 				}
 			}
-		case end := <-endCh:
+		case end := <-endChG:
 			fmt.Println("END:", end)
 			jsonStr, err := json.Marshal(end)
 			if err != nil {
 				fmt.Println("Marshal error:", err)
 			}
-			path := "./output/" + Output + "end"
+			path := "./key/key"
 			fmt.Println("Saved file", path)
 			err = ioutil.WriteFile(path, jsonStr, 0644)
 			if err != nil {
 				fmt.Println("Create file error:", err)
 			}
 			break outer
+		case endS := <-endChS:
+			fmt.Println("END:", endS)
+			break outer
 		}
+
 	}
 }
 
@@ -163,23 +172,38 @@ func GeneratePartyIDs(count int) tss.SortedPartyIDs {
 	return tss.SortPartyIDs(ids)
 }
 
-func PrepareParty(threshold, parties int) {
+func PrepareGenParty(threshold, parties int) {
 	preParams, _ := keygen.GeneratePreParams(1 * time.Minute)
 	pIDs := GeneratePartyIDs(parties)
 	p2pCtx := tss.NewPeerContext(pIDs)
-	params := tss.NewParameters(tss.S256(), p2pCtx, pIDs[Id-1], parties, threshold)
+	params := tss.NewParameters(p2pCtx, pIDs[Id-1], parties, threshold)
 
-	P = keygen.NewLocalParty(params, outCh, endCh, *preParams).(*keygen.LocalParty)
+	PG = keygen.NewLocalParty(params, outCh, endChG, *preParams).(*keygen.LocalParty)
 }
 
-func GeneratePrivateKeyUpdate() error {
+func PrepareSignParty(msg, key string, parties, quorum int) {
+	msgInt := new(big.Int).SetBytes([]byte(msg))
+	pIDs := GeneratePartyIDs(parties)
+	p2pCtx := tss.NewPeerContext(pIDs)
+	keyS, err := LoadKey(key)
+
+	if err != nil {
+		panic(err)
+	}
+
+	params := tss.NewParameters(p2pCtx, pIDs[Id-1], parties, quorum)
+
+	PS = signing.NewLocalParty(msgInt, params, *keyS, outCh, endChS).(*signing.LocalParty)
+}
+
+func Update() error {
 	if err := log.SetLogLevel("tss-lib", "debug"); err != nil {
 		return err
 	}
 
 	updater := test.SharedPartyUpdater
 
-	files, err := ioutil.ReadDir("./input")
+	files, err := ioutil.ReadDir(Input)
 	if err != nil {
 		fmt.Println(err)
 	}
@@ -189,7 +213,7 @@ func GeneratePrivateKeyUpdate() error {
 			continue
 		}
 
-		b, err := ioutil.ReadFile("./input/" + file.Name())
+		b, err := ioutil.ReadFile(Input + "/" + file.Name())
 		if err != nil {
 			fmt.Println("Read file error:", err)
 			return err
@@ -211,34 +235,69 @@ func GeneratePrivateKeyUpdate() error {
 			return errors.New("tried to send a message to itself")
 		}
 
-		go updater(P, msg, errCh)
+		if PG != nil {
+			fmt.Println("Start PG update")
+			go updater(PG, msg, errCh)
+		} else if PS != nil {
+			fmt.Println("Start PS update")
+			go updater(PS, msg, errCh)
+		}
 	}
 
 	return nil
 }
 
-func GeneratePrivateKey(id, threshold, parties, round int, mnemonic, output string) error {
+func GenerateKey(id, threshold, parties int, input, output string) error {
 	if err := log.SetLogLevel("tss-lib", "debug"); err != nil {
 		panic(err)
 	}
 
 	Id = id
+	Input = input
 	Output = output
-	PrepareParty(parties, threshold)
+	PrepareGenParty(parties, threshold)
 
-	if err := P.Start(); err != nil {
-		fmt.Println("Start error:", err)
-		return err
+	go func(PG *keygen.LocalParty) {
+		if err := PG.Start(); err != nil {
+			errCh <- err
+		}
+	}(PG)
+
+	return nil
+}
+
+func LoadKey(keyFile string) (*keygen.LocalPartySaveData, error) {
+	b, err := ioutil.ReadFile(keyFile)
+	if err != nil {
+		fmt.Println("Read key file error:", err)
+		return nil, err
 	}
 
-	return nil
+	var key = new(keygen.LocalPartySaveData)
+
+	if err = json.Unmarshal(b, &key); err != nil {
+		fmt.Println("Unmarshal key error:", err)
+		return nil, err
+	}
+
+	return key, nil
 }
 
-func GeneratePublicKey(input, output, format string) error {
-	return nil
-}
+func SignMessage(input, output, message, key string, id, parties, quorum int) error {
+	if err := log.SetLogLevel("tss-lib", "debug"); err != nil {
+		panic(err)
+	}
+	Id = id
+	Input = input
+	Output = output
+	PrepareSignParty(message, key, parties, quorum)
 
-func SignMessage(input, output, message, key string, round int) error {
+	go func(PS *signing.LocalParty) {
+		if err := PS.Start(); err != nil {
+			errCh <- err
+		}
+	}(PS)
+
 	return nil
 }
 

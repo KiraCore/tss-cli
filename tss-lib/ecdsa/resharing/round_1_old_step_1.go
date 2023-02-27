@@ -10,12 +10,12 @@ import (
 	"errors"
 	"fmt"
 
-	"github.com/bnb-chain/tss-lib/crypto"
-	"github.com/bnb-chain/tss-lib/crypto/commitments"
-	"github.com/bnb-chain/tss-lib/crypto/vss"
-	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
-	"github.com/bnb-chain/tss-lib/ecdsa/signing"
-	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/binance-chain/tss-lib/crypto"
+	"github.com/binance-chain/tss-lib/crypto/commitments"
+	"github.com/binance-chain/tss-lib/crypto/vss"
+	"github.com/binance-chain/tss-lib/ecdsa/keygen"
+	"github.com/binance-chain/tss-lib/ecdsa/signing"
+	"github.com/binance-chain/tss-lib/tss"
 )
 
 // round 1 represents round 1 of the keygen part of the GG18 ECDSA TSS spec (Gennaro, Goldfeder; 2018)
@@ -47,10 +47,13 @@ func (round *round1) Start() *tss.Error {
 		return round.WrapError(fmt.Errorf("t+1=%d is not satisfied by the key count of %d", round.Threshold()+1, len(ks)), round.PartyID())
 	}
 	newKs := round.NewParties().IDs().Keys()
-	wi, _ := signing.PrepareForSigning(round.Params().EC(), i, len(round.OldParties().IDs()), xi, ks, bigXj)
+	wi, _, err := signing.PrepareForSigning(i, len(round.OldParties().IDs()), xi, ks, bigXj)
+	if err != nil {
+		return round.WrapError(err, round.PartyID())
+	}
 
 	// 2.
-	vi, shares, err := vss.Create(round.Params().EC(), round.NewThreshold(), wi, newKs)
+	vi, shares, err := vss.Create(round.NewThreshold(), wi, newKs)
 	if err != nil {
 		return round.WrapError(err, round.PartyID())
 	}
@@ -101,7 +104,7 @@ func (round *round1) Update() (bool, *tss.Error) {
 
 		// save the ecdsa pub received from the old committee
 		r1msg := round.temp.dgRound1Messages[0].Content().(*DGRound1Message)
-		candidate, err := r1msg.UnmarshalECDSAPub(round.Params().EC())
+		candidate, err := r1msg.UnmarshalECDSAPub()
 		if err != nil {
 			return false, round.WrapError(errors.New("unable to unmarshal the ecdsa pub key"), msg.GetFrom())
 		}

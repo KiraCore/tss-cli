@@ -7,14 +7,13 @@
 package keygen
 
 import (
-	"context"
 	"errors"
 	"math/big"
 	"runtime"
 	"time"
 
-	"github.com/bnb-chain/tss-lib/common"
-	"github.com/bnb-chain/tss-lib/crypto/paillier"
+	"github.com/binance-chain/tss-lib/common"
+	"github.com/binance-chain/tss-lib/crypto/paillier"
 )
 
 const (
@@ -29,18 +28,7 @@ const (
 // GeneratePreParams finds two safe primes and computes the Paillier secret required for the protocol.
 // This can be a time consuming process so it is recommended to do it out-of-band.
 // If not specified, a concurrency value equal to the number of available CPU cores will be used.
-// If pre-parameters could not be generated before the timeout, an error is returned.
 func GeneratePreParams(timeout time.Duration, optionalConcurrency ...int) (*LocalPreParams, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), timeout)
-	defer cancel()
-	return GeneratePreParamsWithContext(ctx, optionalConcurrency...)
-}
-
-// GeneratePreParams finds two safe primes and computes the Paillier secret required for the protocol.
-// This can be a time consuming process so it is recommended to do it out-of-band.
-// If not specified, a concurrency value equal to the number of available CPU cores will be used.
-// If pre-parameters could not be generated before the context is done, an error is returned.
-func GeneratePreParamsWithContext(ctx context.Context, optionalConcurrency ...int) (*LocalPreParams, error) {
 	var concurrency int
 	if 0 < len(optionalConcurrency) {
 		if 1 < len(optionalConcurrency) {
@@ -63,7 +51,7 @@ func GeneratePreParamsWithContext(ctx context.Context, optionalConcurrency ...in
 		common.Logger.Info("generating the Paillier modulus, please wait...")
 		start := time.Now()
 		// more concurrency weight is assigned here because the paillier primes have a requirement of having "large" P-Q
-		PiPaillierSk, _, err := paillier.GenerateKeyPair(ctx, paillierModulusLen, concurrency*2)
+		PiPaillierSk, _, err := paillier.GenerateKeyPair(paillierModulusLen, timeout, concurrency*2)
 		if err != nil {
 			ch <- nil
 			return
@@ -77,7 +65,7 @@ func GeneratePreParamsWithContext(ctx context.Context, optionalConcurrency ...in
 		var err error
 		common.Logger.Info("generating the safe primes for the signing proofs, please wait...")
 		start := time.Now()
-		sgps, err := common.GetRandomSafePrimesConcurrent(ctx, safePrimeBitLen, 2, concurrency)
+		sgps, err := common.GetRandomSafePrimesConcurrent(safePrimeBitLen, 2, timeout, concurrency)
 		if err != nil {
 			ch <- nil
 			return
@@ -126,7 +114,7 @@ consumer:
 	modPQ := common.ModInt(new(big.Int).Mul(p, q))
 	f1 := common.GetRandomPositiveRelativelyPrimeInt(NTildei)
 	alpha := common.GetRandomPositiveRelativelyPrimeInt(NTildei)
-	beta := modPQ.ModInverse(alpha)
+	beta := modPQ.Inverse(alpha)
 	h1i := modNTildeI.Mul(f1, f1)
 	h2i := modNTildeI.Exp(h1i, alpha)
 

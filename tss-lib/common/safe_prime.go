@@ -15,6 +15,7 @@ import (
 	"math/big"
 	"sync"
 	"sync/atomic"
+	"time"
 )
 
 const (
@@ -95,15 +96,10 @@ var smallPrimes = []uint8{
 // operations.
 var smallPrimesProduct = new(big.Int).SetUint64(16294579238595022365)
 
-// ErrGeneratorCancelled is an error returned from GetRandomSafePrimesConcurrent
-// when the work of the generator has been cancelled as a result of the context
-// being done (cancellation or timeout).
-var ErrGeneratorCancelled = fmt.Errorf("generator work cancelled")
-
 // GetRandomSafePrimesConcurrent tries to find safe primes concurrently.
 // The returned results are safe primes `p` and prime `q` such that `p=2q+1`.
 // Concurrency level can be controlled with the `concurrencyLevel` parameter.
-// If a safe prime could not be found before the context is done, the error
+// If a safe prime could not be found in the specified `timeout`, the error
 // is returned. Also, if at least one search process failed, error is returned
 // as well.
 //
@@ -125,7 +121,7 @@ var ErrGeneratorCancelled = fmt.Errorf("generator work cancelled")
 // This function generates safe primes of at least 6 `bitLen`. For every
 // generated safe prime, the two most significant bits are always set to `1`
 // - we don't want the generated number to be too small.
-func GetRandomSafePrimesConcurrent(ctx context.Context, bitLen, numPrimes int, concurrency int) ([]*GermainSafePrime, error) {
+func GetRandomSafePrimesConcurrent(bitLen, numPrimes int, timeout time.Duration, concurrency int) ([]*GermainSafePrime, error) {
 	if bitLen < 6 {
 		return nil, errors.New("safe prime size must be at least 6 bits")
 	}
@@ -143,15 +139,20 @@ func GetRandomSafePrimesConcurrent(ctx context.Context, bitLen, numPrimes int, c
 	defer close(errCh)
 	defer waitGroup.Wait()
 
-	generatorCtx, cancelGeneratorCtx := context.WithCancel(ctx)
-	defer cancelGeneratorCtx()
+	ctx, cancel := context.WithCancel(context.Background())
 
 	for i := 0; i < concurrency; i++ {
 		waitGroup.Add(1)
 		runGenPrimeRoutine(
-			generatorCtx, primeCh, errCh, waitGroup, rand.Reader, bitLen,
+			ctx, primeCh, errCh, waitGroup, rand.Reader, bitLen,
 		)
 	}
+
+	// Cancel after the specified timeout.
+	go func() {
+		time.Sleep(timeout)
+		cancel()
+	}()
 
 	needed := int32(numPrimes)
 	for {
@@ -159,12 +160,14 @@ func GetRandomSafePrimesConcurrent(ctx context.Context, bitLen, numPrimes int, c
 		case result := <-primeCh:
 			primes = append(primes, result)
 			if atomic.AddInt32(&needed, -1) <= 0 {
+				cancel()
 				return primes[:numPrimes], nil
 			}
 		case err := <-errCh:
+			cancel()
 			return nil, err
 		case <-ctx.Done():
-			return nil, ErrGeneratorCancelled
+			return nil, fmt.Errorf("generator timed out after %v", timeout)
 		}
 	}
 }

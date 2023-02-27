@@ -17,10 +17,10 @@ import (
 	"github.com/ipfs/go-log"
 	"github.com/stretchr/testify/assert"
 
-	"github.com/bnb-chain/tss-lib/common"
-	"github.com/bnb-chain/tss-lib/eddsa/keygen"
-	"github.com/bnb-chain/tss-lib/test"
-	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/binance-chain/tss-lib/common"
+	"github.com/binance-chain/tss-lib/eddsa/keygen"
+	"github.com/binance-chain/tss-lib/test"
+	"github.com/binance-chain/tss-lib/tss"
 )
 
 const (
@@ -32,13 +32,12 @@ func setUp(level string) {
 	if err := log.SetLogLevel("tss-lib", level); err != nil {
 		panic(err)
 	}
-
-	// only for test
-	tss.SetCurve(tss.Edwards())
 }
 
 func TestE2EConcurrent(t *testing.T) {
 	setUp("info")
+
+	tss.SetCurve(edwards.Edwards())
 
 	threshold := testThreshold
 
@@ -55,14 +54,14 @@ func TestE2EConcurrent(t *testing.T) {
 
 	errCh := make(chan *tss.Error, len(signPIDs))
 	outCh := make(chan tss.Message, len(signPIDs))
-	endCh := make(chan common.SignatureData, len(signPIDs))
+	endCh := make(chan *SignatureData, len(signPIDs))
 
 	updater := test.SharedPartyUpdater
 
 	msg := big.NewInt(200)
 	// init the parties
 	for i := 0; i < len(signPIDs); i++ {
-		params := tss.NewParameters(tss.Edwards(), p2pCtx, signPIDs[i], len(signPIDs), threshold)
+		params := tss.NewParameters(p2pCtx, signPIDs[i], len(signPIDs), threshold)
 
 		P := NewLocalParty(msg, params, keys[i], outCh, endCh).(*LocalParty)
 		parties = append(parties, P)
@@ -122,12 +121,12 @@ signing:
 				// BEGIN EDDSA verify
 				pkX, pkY := keys[0].EDDSAPub.X(), keys[0].EDDSAPub.Y()
 				pk := edwards.PublicKey{
-					Curve: tss.Edwards(),
+					Curve: tss.EC(),
 					X:     pkX,
 					Y:     pkY,
 				}
 
-				newSig, err := edwards.ParseSignature(parties[0].data.Signature)
+				newSig, err := edwards.ParseSignature(parties[0].data.Signature.Signature)
 				if err != nil {
 					println("new sig error, ", err.Error())
 				}

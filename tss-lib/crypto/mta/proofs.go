@@ -7,14 +7,14 @@
 package mta
 
 import (
-	"crypto/elliptic"
 	"errors"
 	"fmt"
 	"math/big"
 
-	"github.com/bnb-chain/tss-lib/common"
-	"github.com/bnb-chain/tss-lib/crypto"
-	"github.com/bnb-chain/tss-lib/crypto/paillier"
+	"github.com/binance-chain/tss-lib/common"
+	"github.com/binance-chain/tss-lib/crypto"
+	"github.com/binance-chain/tss-lib/crypto/paillier"
+	"github.com/binance-chain/tss-lib/tss"
 )
 
 const (
@@ -35,16 +35,16 @@ type (
 
 // ProveBobWC implements Bob's proof both with or without check "ProveMtawc_Bob" and "ProveMta_Bob" used in the MtA protocol from GG18Spec (9) Figs. 10 & 11.
 // an absent `X` generates the proof without the X consistency check X = g^x
-func ProveBobWC(ec elliptic.Curve, pk *paillier.PublicKey, NTilde, h1, h2, c1, c2, x, y, r *big.Int, X *crypto.ECPoint) (*ProofBobWC, error) {
+func ProveBobWC(pk *paillier.PublicKey, NTilde, h1, h2, c1, c2, x, y, r *big.Int, X *crypto.ECPoint) (*ProofBobWC, error) {
 	if pk == nil || NTilde == nil || h1 == nil || h2 == nil || c1 == nil || c2 == nil || x == nil || y == nil || r == nil {
 		return nil, errors.New("ProveBob() received a nil argument")
 	}
 
-	NSquared := pk.NSquare()
+	NSq := pk.NSquare()
 
-	q := ec.Params().N
+	q := tss.EC().Params().N
 	q3 := new(big.Int).Mul(q, q)
-	q3 = new(big.Int).Mul(q, q3)
+	q3.Mul(q3, q)
 	qNTilde := new(big.Int).Mul(q, NTilde)
 	q3NTilde := new(big.Int).Mul(q3, NTilde)
 
@@ -65,9 +65,9 @@ func ProveBobWC(ec elliptic.Curve, pk *paillier.PublicKey, NTilde, h1, h2, c1, c
 	gamma := common.GetRandomPositiveRelativelyPrimeInt(pk.N)
 
 	// 5.
-	u := crypto.NewECPointNoCurveCheck(ec, zero, zero) // initialization suppresses an IDE warning
+	u := crypto.NewECPointNoCurveCheck(tss.EC(), zero, zero) // initialization suppresses an IDE warning
 	if X != nil {
-		u = crypto.ScalarBaseMult(ec, alpha)
+		u = crypto.ScalarBaseMult(tss.EC(), alpha)
 	}
 
 	// 6.
@@ -84,10 +84,10 @@ func ProveBobWC(ec elliptic.Curve, pk *paillier.PublicKey, NTilde, h1, h2, c1, c
 	t = modNTilde.Mul(t, modNTilde.Exp(h2, sigma))
 
 	// 9.
-	modNSquared := common.ModInt(NSquared)
-	v := modNSquared.Exp(c1, alpha)
-	v = modNSquared.Mul(v, modNSquared.Exp(pk.Gamma(), gamma))
-	v = modNSquared.Mul(v, modNSquared.Exp(beta, pk.N))
+	modNSq := common.ModInt(NSq)
+	v := modNSq.Exp(c1, alpha)
+	v = modNSq.Mul(v, modNSq.Exp(pk.Gamma(), gamma))
+	v = modNSq.Mul(v, modNSq.Exp(beta, pk.N))
 
 	// 10.
 	w := modNTilde.Exp(h1, gamma)
@@ -135,22 +135,22 @@ func ProveBobWC(ec elliptic.Curve, pk *paillier.PublicKey, NTilde, h1, h2, c1, c
 }
 
 // ProveBob implements Bob's proof "ProveMta_Bob" used in the MtA protocol from GG18Spec (9) Fig. 11.
-func ProveBob(ec elliptic.Curve, pk *paillier.PublicKey, NTilde, h1, h2, c1, c2, x, y, r *big.Int) (*ProofBob, error) {
+func ProveBob(pk *paillier.PublicKey, NTilde, h1, h2, c1, c2, x, y, r *big.Int) (*ProofBob, error) {
 	// the Bob proof ("with check") contains the ProofBob "without check"; this method extracts and returns it
 	// X is supplied as nil to exclude it from the proof hash
-	pf, err := ProveBobWC(ec, pk, NTilde, h1, h2, c1, c2, x, y, r, nil)
+	pf, err := ProveBobWC(pk, NTilde, h1, h2, c1, c2, x, y, r, nil)
 	if err != nil {
 		return nil, err
 	}
 	return pf.ProofBob, nil
 }
 
-func ProofBobWCFromBytes(ec elliptic.Curve, bzs [][]byte) (*ProofBobWC, error) {
+func ProofBobWCFromBytes(bzs [][]byte) (*ProofBobWC, error) {
 	proofBob, err := ProofBobFromBytes(bzs)
 	if err != nil {
 		return nil, err
 	}
-	point, err := crypto.NewECPoint(ec,
+	point, err := crypto.NewECPoint(tss.EC(),
 		new(big.Int).SetBytes(bzs[10]),
 		new(big.Int).SetBytes(bzs[11]))
 	if err != nil {
@@ -185,15 +185,14 @@ func ProofBobFromBytes(bzs [][]byte) (*ProofBob, error) {
 
 // ProveBobWC.Verify implements verification of Bob's proof with check "VerifyMtawc_Bob" used in the MtA protocol from GG18Spec (9) Fig. 10.
 // an absent `X` verifies a proof generated without the X consistency check X = g^x
-func (pf *ProofBobWC) Verify(ec elliptic.Curve, pk *paillier.PublicKey, NTilde, h1, h2, c1, c2 *big.Int, X *crypto.ECPoint) bool {
+func (pf *ProofBobWC) Verify(pk *paillier.PublicKey, NTilde, h1, h2, c1, c2 *big.Int, X *crypto.ECPoint) bool {
 	if pk == nil || NTilde == nil || h1 == nil || h2 == nil || c1 == nil || c2 == nil {
 		return false
 	}
 
-	q := ec.Params().N
+	q := tss.EC().Params().N
 	q3 := new(big.Int).Mul(q, q)
 	q3 = new(big.Int).Mul(q, q3)
-
 	gcd := big.NewInt(0)
 	if pf.S.Cmp(zero) == 0 {
 		return false
@@ -207,7 +206,6 @@ func (pf *ProofBobWC) Verify(ec elliptic.Curve, pk *paillier.PublicKey, NTilde, 
 	if gcd.GCD(nil, nil, pf.V, pk.N).Cmp(one) != 0 {
 		return false
 	}
-
 	// 3.
 	if pf.S1.Cmp(q3) > 0 {
 		return false
@@ -230,8 +228,8 @@ func (pf *ProofBobWC) Verify(ec elliptic.Curve, pk *paillier.PublicKey, NTilde, 
 
 	// 4. runs only in the "with check" mode from Fig. 10
 	if X != nil {
-		s1ModQ := new(big.Int).Mod(pf.S1, ec.Params().N)
-		gS1 := crypto.ScalarBaseMult(ec, s1ModQ)
+		s1ModQ := new(big.Int).Mod(pf.S1, tss.EC().Params().N)
+		gS1 := crypto.ScalarBaseMult(tss.EC(), s1ModQ)
 		xEU, err := X.ScalarMult(e).Add(pf.U)
 		if err != nil || !gS1.Equals(xEU) {
 			return false
@@ -265,15 +263,15 @@ func (pf *ProofBobWC) Verify(ec elliptic.Curve, pk *paillier.PublicKey, NTilde, 
 	}
 
 	{ // 7.
-		modNSquared := common.ModInt(pk.NSquare())
+		modNSq := common.ModInt(pk.NSquare())
 
-		c1ExpS1 := modNSquared.Exp(c1, pf.S1)
-		sExpN := modNSquared.Exp(pf.S, pk.N)
-		gammaExpT1 := modNSquared.Exp(pk.Gamma(), pf.T1)
-		left = modNSquared.Mul(c1ExpS1, sExpN)
-		left = modNSquared.Mul(left, gammaExpT1)
-		c2ExpE := modNSquared.Exp(c2, e)
-		right = modNSquared.Mul(c2ExpE, pf.V)
+		c1ExpS1 := modNSq.Exp(c1, pf.S1)
+		sExpN := modNSq.Exp(pf.S, pk.N)
+		gammaExpT1 := modNSq.Exp(pk.Gamma(), pf.T1)
+		left = modNSq.Mul(c1ExpS1, sExpN)
+		left = modNSq.Mul(left, gammaExpT1)
+		c2ExpE := modNSq.Exp(c2, e)
+		right = modNSq.Mul(c2ExpE, pf.V)
 		if left.Cmp(right) != 0 {
 			return false
 		}
@@ -282,12 +280,12 @@ func (pf *ProofBobWC) Verify(ec elliptic.Curve, pk *paillier.PublicKey, NTilde, 
 }
 
 // ProveBob.Verify implements verification of Bob's proof without check "VerifyMta_Bob" used in the MtA protocol from GG18Spec (9) Fig. 11.
-func (pf *ProofBob) Verify(ec elliptic.Curve, pk *paillier.PublicKey, NTilde, h1, h2, c1, c2 *big.Int) bool {
+func (pf *ProofBob) Verify(pk *paillier.PublicKey, NTilde, h1, h2, c1, c2 *big.Int) bool {
 	if pf == nil {
 		return false
 	}
 	pfWC := &ProofBobWC{ProofBob: pf, U: nil}
-	return pfWC.Verify(ec, pk, NTilde, h1, h2, c1, c2, nil)
+	return pfWC.Verify(pk, NTilde, h1, h2, c1, c2, nil)
 }
 
 func (pf *ProofBob) ValidateBasic() bool {

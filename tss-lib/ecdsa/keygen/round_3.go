@@ -13,11 +13,11 @@ import (
 	"github.com/hashicorp/go-multierror"
 	errors2 "github.com/pkg/errors"
 
-	"github.com/bnb-chain/tss-lib/common"
-	"github.com/bnb-chain/tss-lib/crypto"
-	"github.com/bnb-chain/tss-lib/crypto/commitments"
-	"github.com/bnb-chain/tss-lib/crypto/vss"
-	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/binance-chain/tss-lib/common"
+	"github.com/binance-chain/tss-lib/crypto"
+	"github.com/binance-chain/tss-lib/crypto/commitments"
+	"github.com/binance-chain/tss-lib/crypto/vss"
+	"github.com/binance-chain/tss-lib/tss"
 )
 
 func (round *round3) Start() *tss.Error {
@@ -30,18 +30,6 @@ func (round *round3) Start() *tss.Error {
 
 	Ps := round.Parties().IDs()
 	PIdx := round.PartyID().Index
-
-	// 1,9. calculate xi
-	xi := new(big.Int).Set(round.temp.shares[PIdx].Share)
-	for j := range Ps {
-		if j == PIdx {
-			continue
-		}
-		r2msg1 := round.temp.kgRound2Message1s[j].Content().(*KGRound2Message1)
-		share := r2msg1.UnmarshalShare()
-		xi = new(big.Int).Add(xi, share)
-	}
-	round.save.Xi = new(big.Int).Mod(xi, round.Params().EC().Params().N)
 
 	// 2-3.
 	Vc := make(vss.Vs, round.Threshold()+1)
@@ -77,7 +65,7 @@ func (round *round3) Start() *tss.Error {
 				ch <- vssOut{errors.New("de-commitment verify failed"), nil}
 				return
 			}
-			PjVs, err := crypto.UnFlattenECPoints(round.Params().EC(), flatPolyGs)
+			PjVs, err := crypto.UnFlattenECPoints(tss.EC(), flatPolyGs)
 			if err != nil {
 				ch <- vssOut{err, nil}
 				return
@@ -88,7 +76,7 @@ func (round *round3) Start() *tss.Error {
 				ID:        round.PartyID().KeyInt(),
 				Share:     r2msg1.UnmarshalShare(),
 			}
-			if ok = PjShare.Verify(round.Params().EC(), round.Threshold(), PjVs); !ok {
+			if ok = PjShare.Verify(round.Threshold(), PjVs); !ok {
 				ch <- vssOut{errors.New("vss verify failed"), nil}
 				return
 			}
@@ -96,6 +84,19 @@ func (round *round3) Start() *tss.Error {
 			ch <- vssOut{nil, PjVs}
 		}(j, chs[j])
 	}
+
+	// 1,9. calculate xi (deferred for performance)
+	modQ := common.ModInt(tss.EC().Params().N)
+	xi := new(big.Int).Set(round.temp.shares[PIdx].Share)
+	for j := range Ps {
+		if j == PIdx {
+			continue
+		}
+		r2msg1 := round.temp.kgRound2Message1s[j].Content().(*KGRound2Message1)
+		share := r2msg1.UnmarshalShare()
+		xi = xi.Add(xi, share)
+	}
+	round.save.Xi = modQ.Add(xi, zero)
 
 	// consume unbuffered channels (end the goroutines)
 	vssResults := make([]vssOut, len(Ps))
@@ -146,7 +147,6 @@ func (round *round3) Start() *tss.Error {
 	// 12-16. compute Xj for each Pj
 	{
 		var err error
-		modQ := common.ModInt(round.Params().EC().Params().N)
 		culprits := make([]*tss.PartyID, 0, len(Ps)) // who caused the error(s)
 		bigXj := round.save.BigXj
 		for j := 0; j < round.PartyCount(); j++ {
@@ -170,7 +170,7 @@ func (round *round3) Start() *tss.Error {
 	}
 
 	// 17. compute and SAVE the ECDSA public key `y`
-	ecdsaPubKey, err := crypto.NewECPoint(round.Params().EC(), Vc[0].X(), Vc[0].Y())
+	ecdsaPubKey, err := crypto.NewECPoint(tss.EC(), Vc[0].X(), Vc[0].Y())
 	if err != nil {
 		return round.WrapError(errors2.Wrapf(err, "public key is not on the curve"))
 	}

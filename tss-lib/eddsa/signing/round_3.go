@@ -12,9 +12,9 @@ import (
 	"github.com/agl/ed25519/edwards25519"
 	"github.com/pkg/errors"
 
-	"github.com/bnb-chain/tss-lib/crypto"
-	"github.com/bnb-chain/tss-lib/crypto/commitments"
-	"github.com/bnb-chain/tss-lib/tss"
+	"github.com/binance-chain/tss-lib/crypto"
+	"github.com/binance-chain/tss-lib/crypto/commitments"
+	"github.com/binance-chain/tss-lib/tss"
 )
 
 func (round *round3) Start() *tss.Error {
@@ -49,12 +49,12 @@ func (round *round3) Start() *tss.Error {
 			return round.WrapError(errors.New("length of de-commitment should be 2"))
 		}
 
-		Rj, err := crypto.NewECPoint(round.Params().EC(), coordinates[0], coordinates[1])
+		Rj, err := crypto.NewECPoint(tss.EC(), coordinates[0], coordinates[1])
 		Rj = Rj.EightInvEight()
 		if err != nil {
 			return round.WrapError(errors.Wrapf(err, "NewECPoint(Rj)"), Pj)
 		}
-		proof, err := r2msg.UnmarshalZKProof(round.Params().EC())
+		proof, err := r2msg.UnmarshalZKProof()
 		if err != nil {
 			return round.WrapError(errors.New("failed to unmarshal Rj proof"), Pj)
 		}
@@ -63,7 +63,7 @@ func (round *round3) Start() *tss.Error {
 			return round.WrapError(errors.New("failed to prove Rj"), Pj)
 		}
 
-		extendedRj := ecPointToExtendedElement(round.Params().EC(), Rj.X(), Rj.Y())
+		extendedRj := ecPointToExtendedElement(Rj.X(), Rj.Y())
 		R = addExtendedElements(R, extendedRj)
 	}
 
@@ -75,9 +75,9 @@ func (round *round3) Start() *tss.Error {
 	// h = hash512(k || A || M)
 	h := sha512.New()
 	h.Reset()
-	h.Write(encodedR[:])
-	h.Write(encodedPubKey[:])
-	h.Write(round.temp.m.Bytes())
+	_, _ = h.Write(encodedR[:])
+	_, _ = h.Write(encodedPubKey[:])
+	_, _ = h.Write(round.temp.m.Bytes())
 
 	var lambda [64]byte
 	h.Sum(lambda[:0])

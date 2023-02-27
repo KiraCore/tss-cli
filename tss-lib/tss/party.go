@@ -11,7 +11,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/bnb-chain/tss-lib/common"
+	"github.com/binance-chain/tss-lib/common"
 )
 
 type Party interface {
@@ -161,33 +161,23 @@ func BaseUpdate(p Party, msg ParsedMessage, task string) (ok bool, err *Error) {
 	if p.round() != nil {
 		common.Logger.Debugf("party %s: %s round %d update", p.round().Params().PartyID(), task, p.round().RoundNumber())
 		if _, err := p.round().Update(); err != nil {
-			fmt.Println("StoreMessage0")
 			return r(false, err)
 		}
 		if p.round().CanProceed() {
-			fmt.Println("StoreMessage00")
 			if p.advance(); p.round() != nil {
-				fmt.Println("StoreMessage001")
 				if err := p.round().Start(); err != nil {
-					fmt.Println("StoreMessage003")
 					return r(false, err)
 				}
-				fmt.Println("StoreMessage004")
 				rndNum := p.round().RoundNumber()
-				fmt.Println("StoreMessage005")
 				common.Logger.Infof("party %s: %s round %d started", p.round().Params().PartyID(), task, rndNum)
 			} else {
-				fmt.Println("StoreMessage002")
 				// finished! the round implementation will have sent the data through the `end` channel.
 				common.Logger.Infof("party %s: %s finished!", p.PartyID(), task)
 			}
-			fmt.Println("StoreMessage1")
 			p.unlock()                      // recursive so can't defer after return
 			return BaseUpdate(p, msg, task) // re-run round update or finish)
 		}
-		fmt.Println("StoreMessage2")
 		return r(true, nil)
 	}
-	fmt.Println("StoreMessage3")
 	return r(true, nil)
 }
