@@ -4,19 +4,19 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
-	"github.com/ipfs/go-log"
 	"io/ioutil"
 	"math/big"
 	"os"
 	"time"
 
-	"github.com/binance-chain/tss-lib/ecdsa/keygen"
-	"github.com/binance-chain/tss-lib/ecdsa/signing"
-	"github.com/binance-chain/tss-lib/test"
-	"github.com/binance-chain/tss-lib/tss"
-	"github.com/cosmos/cosmos-sdk/client"
+	"github.com/bnb-chain/tss-lib/common"
+	"github.com/bnb-chain/tss-lib/ecdsa/keygen"
+	"github.com/bnb-chain/tss-lib/ecdsa/signing"
+	"github.com/bnb-chain/tss-lib/test"
+	"github.com/bnb-chain/tss-lib/tss"
 	"github.com/spf13/cobra"
 	"github.com/tendermint/tendermint/libs/json"
+	"go.uber.org/zap"
 )
 
 const (
@@ -24,11 +24,8 @@ const (
 	PartiesKey     = "parties"
 	QuorumKey      = "quorum"
 	ThresholdKey   = "threshold"
-	RoundKey       = "round"
-	MnemonicKey    = "mnemonic"
 	InputKey       = "input"
 	OutputKey      = "output"
-	FormatKey      = "format"
 	MessageKey     = "message"
 	MessageFileKey = "message-file"
 	KeyKey         = "key"
@@ -47,7 +44,7 @@ type Message struct {
 var errCh = make(chan *tss.Error, 1)
 var outCh = make(chan tss.Message, 1)
 var endChG = make(chan keygen.LocalPartySaveData, 1)
-var endChS = make(chan *signing.SignatureData, 1)
+var endChS = make(chan common.SignatureData, 1)
 
 var Input string
 var Output string
@@ -60,7 +57,6 @@ func main() {
 		Use:                        "tss-cli",
 		DisableFlagParsing:         true,
 		SuggestionsMinimumDistance: 2,
-		RunE:                       client.ValidateCmd,
 	}
 
 	rootCmd.AddCommand(Keygen())
@@ -144,7 +140,7 @@ outer:
 			if err != nil {
 				fmt.Println("Marshal error:", err)
 			}
-			path := "./key/key"
+			path := "./key/key.json"
 			fmt.Println("Saved file", path)
 			err = ioutil.WriteFile(path, jsonStr, 0644)
 			if err != nil {
@@ -152,7 +148,7 @@ outer:
 			}
 			break outer
 		case endS := <-endChS:
-			fmt.Println("END:", endS)
+			fmt.Println("END:", zap.Any("Sign", endS))
 			break outer
 		}
 
@@ -176,7 +172,7 @@ func PrepareGenParty(threshold, parties int) {
 	preParams, _ := keygen.GeneratePreParams(1 * time.Minute)
 	pIDs := GeneratePartyIDs(parties)
 	p2pCtx := tss.NewPeerContext(pIDs)
-	params := tss.NewParameters(p2pCtx, pIDs[Id-1], parties, threshold)
+	params := tss.NewParameters(tss.S256(), p2pCtx, pIDs[Id-1], parties, threshold)
 
 	PG = keygen.NewLocalParty(params, outCh, endChG, *preParams).(*keygen.LocalParty)
 }
@@ -191,15 +187,15 @@ func PrepareSignParty(msg, key string, parties, quorum int) {
 		panic(err)
 	}
 
-	params := tss.NewParameters(p2pCtx, pIDs[Id-1], parties, quorum)
+	params := tss.NewParameters(tss.S256(), p2pCtx, pIDs[Id-1], parties, quorum)
 
 	PS = signing.NewLocalParty(msgInt, params, *keyS, outCh, endChS).(*signing.LocalParty)
 }
 
 func Update() error {
-	if err := log.SetLogLevel("tss-lib", "debug"); err != nil {
-		return err
-	}
+	//if err := log.SetLogLevel("tss-lib", "debug"); err != nil {
+	//	return err
+	//}
 
 	updater := test.SharedPartyUpdater
 
@@ -248,14 +244,14 @@ func Update() error {
 }
 
 func GenerateKey(id, threshold, parties int, input, output string) error {
-	if err := log.SetLogLevel("tss-lib", "debug"); err != nil {
-		panic(err)
-	}
+	//if err := log.SetLogLevel("tss-lib", "debug"); err != nil {
+	//	panic(err)
+	//}
 
 	Id = id
 	Input = input
 	Output = output
-	PrepareGenParty(parties, threshold)
+	PrepareGenParty(threshold, parties)
 
 	go func(PG *keygen.LocalParty) {
 		if err := PG.Start(); err != nil {
@@ -284,9 +280,9 @@ func LoadKey(keyFile string) (*keygen.LocalPartySaveData, error) {
 }
 
 func SignMessage(input, output, message, key string, id, parties, quorum int) error {
-	if err := log.SetLogLevel("tss-lib", "debug"); err != nil {
-		panic(err)
-	}
+	//if err := log.SetLogLevel("tss-lib", "debug"); err != nil {
+	//	panic(err)
+	//}
 	Id = id
 	Input = input
 	Output = output
